@@ -19,4 +19,9 @@
   </f:entry>
 
   <f:property field="targetRegistry"/>
+
+  <f:entry title="Additional Build Arguments" field="buildAdditionalArgs"
+      description="Additional build arguments passed to s2i build such as --incremental -e RAILS_ENV=production">
+      <f:textbox />
+  </f:entry>
 </j:jelly>

@@ -66,6 +66,7 @@ public class S2IBuilder extends Builder {
     private String targetTag;
     @CheckForNull
     private String baseImage;
+    private String buildAdditionalArgs = "";
 
     @Deprecated
     public S2IBuilder(String targetName, String targetTag) {
@@ -114,6 +115,15 @@ public class S2IBuilder extends Builder {
     public void setBaseImage(String baseImage) {
 		this.baseImage = baseImage;
 	}
+    
+    public String getBuildAdditionalArgs() {
+        return buildAdditionalArgs == null ? "" : buildAdditionalArgs;
+    }
+
+    @DataBoundSetter
+    public void setBuildAdditionalArgs(String buildAdditionalArgs) {
+        this.buildAdditionalArgs = buildAdditionalArgs;
+    }
 
     /**
      * Fully qualified repository/image name with the registry url in front
@@ -197,8 +207,7 @@ public class S2IBuilder extends Builder {
             Result lastResult = new Result();
 
             lastResult = executeCmd("s2i build "
-                + "--incremental "
-                + "-e RAILS_ENV=production "
+                + expandAll(getBuildAdditionalArgs()) + " "
                 + "'" + context + "' "
                 + baseImage + " "
                 + getTarget()

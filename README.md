@@ -1,6 +1,6 @@
 # S2I build plugin for Jenkins
 
-We would love to have this.
+Recently we have enjoyed using [source-to-image](https://github.com/openshift/source-to-image) to build our Ruby on Rails Docker images. We wanted something that would allow Jenkins to build the images as well.
 
 # Plugin development
 
