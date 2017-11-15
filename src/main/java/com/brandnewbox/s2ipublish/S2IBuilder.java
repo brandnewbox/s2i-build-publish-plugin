@@ -194,8 +194,6 @@ public class S2IBuilder extends Builder {
         private boolean buildAndTag() throws MacroEvaluationException, IOException, InterruptedException {
             FilePath context;
             context = build.getWorkspace();
-
-            Iterator<ImageTag> i = getImageTags().iterator();
             Result lastResult = new Result();
 
             lastResult = executeCmd("s2i build "
@@ -205,21 +203,24 @@ public class S2IBuilder extends Builder {
                 + baseImage + " "
                 + getTarget()
             );
-
-            if (i.hasNext()) {
-                lastResult = executeCmd("docker tag "
+            
+            List<String> result = new ArrayList<String>();
+            for (ImageTag imageTag : getImageTags()) {
+                result.add("docker tag " 
                     + getTarget() + " "
-                    + i.next()
+                    + imageTag.toString()
                 );
             }
-            return lastResult.result;
+            return executeCmd(result);
         }
 
 
         private boolean dockerPushCommand() throws InterruptedException, MacroEvaluationException, IOException {
             List<String> result = new ArrayList<String>();
             for (ImageTag imageTag : getImageTags()) {
-                result.add("docker push " + imageTag.toString());
+                result.add("docker push "
+                    + imageTag.toString()
+                );
             }
             return executeCmd(result);
         }
