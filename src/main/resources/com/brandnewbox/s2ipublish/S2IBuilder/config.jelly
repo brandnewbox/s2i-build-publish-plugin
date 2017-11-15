@@ -1,0 +1,22 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form" xmlns:dc="/lib/docker/commons">
+  <!--
+    This jelly script is used for per-project configuration.
+
+    See global.jelly for a general discussion about jelly script.
+  -->
+
+  <f:entry title="Base Image" field="baseImage">
+    <f:textbox />
+  </f:entry>
+
+  <f:entry title="Target Repository Name" field="targetName">
+    <f:textbox />
+  </f:entry>
+
+  <f:entry title="Target Tag" field="targetTag">
+    <f:textbox />
+  </f:entry>
+
+  <f:property field="targetRegistry"/>
+</j:jelly>

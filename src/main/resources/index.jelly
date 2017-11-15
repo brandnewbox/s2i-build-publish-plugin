@@ -1,0 +1,8 @@
+<!--
+  This view is used to render the installed plugins page.
+-->
+<?jelly escape-by-default='true'?>
+<div>
+  This plugin enables building source-to-image based projects,
+  as well as publishing of the built images/repos to the docker registry.
+</div>
