@@ -67,11 +67,13 @@ public class S2IBuilder extends Builder {
     @CheckForNull
     private String baseImage;
     private String buildAdditionalArgs = "";
+    private boolean incrementalBuild;
 
     @Deprecated
-    public S2IBuilder(String targetName, String targetTag) {
+    public S2IBuilder(String targetName, String targetTag, boolean incrementalBuild) {
         this(targetName);
         this.targetTag = targetTag;
+        this.incrementalBuild = incrementalBuild;
     }
 
     @DataBoundConstructor
@@ -123,6 +125,15 @@ public class S2IBuilder extends Builder {
     @DataBoundSetter
     public void setBuildAdditionalArgs(String buildAdditionalArgs) {
         this.buildAdditionalArgs = buildAdditionalArgs;
+    }
+
+    public boolean isIncrementalBuild() {
+        return incrementalBuild;
+    }
+
+    @DataBoundSetter
+    public void setIncrementalBuild(boolean incrementalBuild) {
+        this.incrementalBuild = incrementalBuild;
     }
 
     /**
@@ -207,6 +218,7 @@ public class S2IBuilder extends Builder {
             Result lastResult = new Result();
 
             lastResult = executeCmd("s2i build "
+                + ((isIncrementalBuild()) ? "--incremental" : "") + " "
                 + expandAll(getBuildAdditionalArgs()) + " "
                 + "'" + context + "' "
                 + baseImage + " "
