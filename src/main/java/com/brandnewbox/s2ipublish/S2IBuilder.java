@@ -38,6 +38,8 @@ import javax.servlet.ServletException;
 import org.apache.commons.io.output.TeeOutputStream;
 import org.jenkinsci.plugins.docker.commons.credentials.KeyMaterial;
 import org.jenkinsci.plugins.docker.commons.credentials.DockerRegistryEndpoint;
+import org.jenkinsci.plugins.docker.commons.credentials.DockerServerEndpoint;
+import org.jenkinsci.plugins.docker.commons.tools.DockerTool;
 import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
 import org.jenkinsci.plugins.tokenmacro.TokenMacro;
 import org.kohsuke.accmod.Restricted;
@@ -57,8 +59,7 @@ public class S2IBuilder extends Builder {
 
     private static final Logger logger = Logger.getLogger(S2IBuilder.class.getName());
 
-
-    @CheckForNull
+    private DockerServerEndpoint server;
     private DockerRegistryEndpoint targetRegistry;
     @CheckForNull
     private String targetName;
@@ -68,6 +69,8 @@ public class S2IBuilder extends Builder {
     private String baseImage;
     private String buildAdditionalArgs = "";
     private boolean incrementalBuild;
+    @CheckForNull
+    private String dockerToolName;
 
     @Deprecated
     public S2IBuilder(String targetName, String targetTag, boolean incrementalBuild) {
@@ -78,8 +81,18 @@ public class S2IBuilder extends Builder {
 
     @DataBoundConstructor
     public S2IBuilder(String targetName) {
+        this.server = new DockerServerEndpoint(null, null);
         this.targetRegistry = new DockerRegistryEndpoint(null, null);
         this.targetName = targetName;
+    }
+
+    public DockerServerEndpoint getServer() {
+        return server;
+    }
+
+    @DataBoundSetter
+    public void setServer(DockerServerEndpoint server) {
+        this.server = server;
     }
 
     public DockerRegistryEndpoint getTargetRegistry() {
@@ -134,6 +147,15 @@ public class S2IBuilder extends Builder {
     @DataBoundSetter
     public void setIncrementalBuild(boolean incrementalBuild) {
         this.incrementalBuild = incrementalBuild;
+    }
+    
+    public String getDockerToolName() {
+        return dockerToolName;
+    }
+    
+    @DataBoundSetter
+    public void setDockerToolName(String dockerToolName) {
+        this.dockerToolName = dockerToolName;
     }
 
     /**
@@ -202,7 +224,7 @@ public class S2IBuilder extends Builder {
             for (String rt : expandAll(getTargetTag()).trim().split(",")) {
                 tags.add(new ImageTag(expandAll(getTarget()), expandAll(rt)));
             }
-            tags.add(new ImageTag(expandAll(getTarget()), "latest"));
+            // tags.add(new ImageTag(expandAll(getTarget()), "latest"));
             return tags;
         }
 
@@ -217,7 +239,7 @@ public class S2IBuilder extends Builder {
             context = build.getWorkspace();
             Result lastResult = new Result();
 
-            lastResult = executeCmd("s2i build "
+            lastResult = executeS2iCmd("build "
                 + ((isIncrementalBuild()) ? "--incremental" : "") + " "
                 + expandAll(getBuildAdditionalArgs()) + " "
                 + "'" + context + "' "
@@ -227,31 +249,32 @@ public class S2IBuilder extends Builder {
             
             List<String> result = new ArrayList<String>();
             for (ImageTag imageTag : getImageTags()) {
-                result.add("docker tag " 
+                result.add("tag " 
                     + getTarget() + " "
                     + imageTag.toString()
                 );
             }
-            return executeCmd(result);
+            return executeDockerCmd(result);
         }
 
 
         private boolean dockerPushCommand() throws InterruptedException, MacroEvaluationException, IOException {
             List<String> result = new ArrayList<String>();
             for (ImageTag imageTag : getImageTags()) {
-                result.add("docker push "
+                result.add("push "
                     + imageTag.toString()
                 );
             }
-            return executeCmd(result);
+            return executeDockerCmd(result);
         }
 
-        private boolean executeCmd(List<String> cmds) throws IOException, InterruptedException {
+
+        private boolean executeS2iCmd(List<String> cmds) throws IOException, InterruptedException {
             Iterator<String> i = cmds.iterator();
             Result lastResult = new Result();
             // if a command fails, do not continue
             while (lastResult.result && i.hasNext()) {
-                lastResult = executeCmd(i.next());
+                lastResult = executeS2iCmd(i.next());
             }
             return lastResult.result;
         }
@@ -259,17 +282,17 @@ public class S2IBuilder extends Builder {
         /**
          * Runs Docker command using Docker CLI.
          * In this default implementation STDOUT and STDERR outputs will be printed to build logs.
-         * Use {@link #executeCmd(java.lang.String, boolean, boolean)} to alter the behavior.
+         * Use {@link #executeS2iCmd(java.lang.String, boolean, boolean)} to alter the behavior.
          * @param cmd Command to be executed
          * @return Execution result
          * @throws IOException Execution error
          * @throws InterruptedException The build has been interrupted
          */
-        private Result executeCmd(String cmd) throws IOException, InterruptedException {
-            return executeCmd(cmd, true, true);
+        private Result executeS2iCmd(String cmd) throws IOException, InterruptedException {
+            return executeS2iCmd(cmd, true, true);
         }
-        
-        /**
+
+                /**
          * Runs Docker command using Docker CLI.
          * @param cmd Command to be executed (Docker command will be prefixed)
          * @param logStdOut If true, propagate STDOUT to the build log
@@ -278,7 +301,7 @@ public class S2IBuilder extends Builder {
          * @throws IOException Execution error
          * @throws InterruptedException The build has been interrupted
          */
-        private @Nonnull Result executeCmd( @Nonnull String cmd, 
+        private @Nonnull Result executeS2iCmd( @Nonnull String cmd, 
                 boolean logStdOut, boolean logStdErr) throws IOException, InterruptedException {
             ByteArrayOutputStream baosStdOut = new ByteArrayOutputStream();
             ByteArrayOutputStream baosStdErr = new ByteArrayOutputStream();
@@ -291,12 +314,108 @@ public class S2IBuilder extends Builder {
             KeyMaterial dockerKeys = 
                 // Docker registry credentials
                 getTargetRegistry().newKeyMaterialFactory(build)
+            .plus(
+                // Docker server credentials. If server is null (right after upgrading) do not use credentials
+                server == null ? null : server.newKeyMaterialFactory(build))
             .materialize();
 
             EnvVars env = new EnvVars();
             env.putAll(build.getEnvironment(listener));
             env.putAll(dockerKeys.env());
 
+            String s2iCmd = "s2i";
+            
+            cmd = s2iCmd + " " +cmd;
+            
+            logger.log(Level.FINER, "Executing: {0}", cmd);
+
+            try {
+                
+                boolean result = launcher.launch()
+                        .envs(env)
+                        .pwd(build.getWorkspace())
+                        .stdout(stdout)
+                        .stderr(stderr)
+                        .cmdAsSingleString(cmd)
+                        .start().join() == 0;
+
+                // capture the stdout so it can be parsed later on
+                final String stdOutStr = DockerCLIHelper.getConsoleOutput(baosStdOut, logger);
+                final String stdErrStr = DockerCLIHelper.getConsoleOutput(baosStdErr, logger);
+                return new Result(result, stdOutStr, stdErrStr);
+
+            } finally {
+                dockerKeys.close();
+            }
+        }
+
+
+        private boolean executeDockerCmd(List<String> cmds) throws IOException, InterruptedException {
+            Iterator<String> i = cmds.iterator();
+            Result lastResult = new Result();
+            // if a command fails, do not continue
+            while (lastResult.result && i.hasNext()) {
+                lastResult = executeDockerCmd(i.next());
+            }
+            return lastResult.result;
+        }
+
+        /**
+         * Runs Docker command using Docker CLI.
+         * In this default implementation STDOUT and STDERR outputs will be printed to build logs.
+         * Use {@link #executeDockerCmd(java.lang.String, boolean, boolean)} to alter the behavior.
+         * @param cmd Command to be executed
+         * @return Execution result
+         * @throws IOException Execution error
+         * @throws InterruptedException The build has been interrupted
+         */
+        private Result executeDockerCmd(String cmd) throws IOException, InterruptedException {
+            return executeDockerCmd(cmd, true, true);
+        }
+
+                /**
+         * Runs Docker command using Docker CLI.
+         * @param cmd Command to be executed (Docker command will be prefixed)
+         * @param logStdOut If true, propagate STDOUT to the build log
+         * @param logStdErr If true, propagate STDERR to the build log
+         * @return Execution result
+         * @throws IOException Execution error
+         * @throws InterruptedException The build has been interrupted
+         */
+        private @Nonnull Result executeDockerCmd( @Nonnull String cmd, 
+                boolean logStdOut, boolean logStdErr) throws IOException, InterruptedException {
+            ByteArrayOutputStream baosStdOut = new ByteArrayOutputStream();
+            ByteArrayOutputStream baosStdErr = new ByteArrayOutputStream();
+            OutputStream stdout = logStdOut ? 
+                    new TeeOutputStream(listener.getLogger(), baosStdOut) : baosStdOut;
+            OutputStream stderr = logStdErr ? 
+                    new TeeOutputStream(listener.getLogger(), baosStdErr) : baosStdErr;
+
+            
+            KeyMaterial dockerKeys = 
+                // Docker registry credentials
+                getTargetRegistry().newKeyMaterialFactory(build)
+            .plus(
+                // Docker server credentials. If server is null (right after upgrading) do not use credentials
+                server == null ? null : server.newKeyMaterialFactory(build))
+            .materialize();
+
+            EnvVars env = new EnvVars();
+            env.putAll(build.getEnvironment(listener));
+            env.putAll(dockerKeys.env());
+
+            String dockerCmd = "docker";
+            
+            if (getDockerToolName() != null) {
+                try {
+                    dockerCmd = DockerTool.getExecutable(getDockerToolName(), build.getBuiltOn(), listener, env);
+                } catch (Exception e) {
+                    logger.log(Level.WARNING, "Something failed", e);
+                }
+            }
+            
+            cmd = dockerCmd + " " +cmd;
+            
             logger.log(Level.FINER, "Executing: {0}", cmd);
 
             try {

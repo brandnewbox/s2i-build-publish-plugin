@@ -18,6 +18,7 @@
     <f:textbox />
   </f:entry>
 
+  <f:property field="server"/>
   <f:property field="targetRegistry"/>
 
   <f:entry title="Incremental Build" field="incrementalBuild">
@@ -28,4 +29,6 @@
       description="Additional build arguments passed to s2i build such as -e RAILS_ENV=production">
       <f:textbox />
   </f:entry>
+
+  <dc:selectDockerTool field="dockerToolName"/>
 </j:jelly>
